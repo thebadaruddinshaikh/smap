@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package rpc;
+
+option go_package="github.com/AndrewSerra/autonomous-driving-pothole-detect/rpc";
+
+message Point {
+    double latitude = 1;
+    double longitude = 2;
+}
+
+message RegisterVehicleRequest {
+    Point start_location = 1;
+    string listening_at = 2;
+}
+
+message RegisterVehicleResponse {
+    string vehicle_id = 1;
+}
+
+message PushLocationUpdateRequest {
+    string vehicle_id = 1;
+    Point car_location = 2;
+    repeated Point potholes = 3;
+}
+
+message PushLocationUpdateResponse {
+    bool accepted = 1;
+}
+
+message ExtendUpcomingAreaRequest {
+    Point pothole = 1;
+}
+
+message ExtendUpcomingAreaResponse {
+    bool accepted = 1;
+}
+
+service PotholeCommunicationService {
+    // Initial request sent to start the system running
+    rpc RegisterVehicle(RegisterVehicleRequest) returns (RegisterVehicleResponse);
+    // Registered a vehicle will push the location data
+    rpc PushLocationUpdate(stream PushLocationUpdateRequest) returns (PushLocationUpdateResponse);
+    // Server will send pothole location updates
+    rpc ExtendUpcomingArea(stream ExtendUpcomingAreaRequest) returns (ExtendUpcomingAreaResponse);
+}
