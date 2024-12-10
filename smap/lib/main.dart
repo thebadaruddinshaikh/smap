@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:smap/camera_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cameras = await availableCameras();
+  bool hasLocation = await requestPermissions();
   final firstCamera = cameras.first;
 
-  runApp(MyApp(camera: firstCamera));
+  if (hasLocation) {
+    runApp(MyApp(camera: firstCamera));
+  } else {
+    throw Exception("Location services are disabled");
+  }
+}
+
+Future<bool> requestPermissions() async {
+  LocationPermission permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+  }
+  return permission == LocationPermission.whileInUse ||
+      permission == LocationPermission.always;
 }
 
 class MyApp extends StatelessWidget {

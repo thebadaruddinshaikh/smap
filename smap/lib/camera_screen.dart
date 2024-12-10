@@ -22,20 +22,21 @@ class _CameraScreenState extends State<CameraScreen> {
   late Future<void> _initializeControllerFuture;
   Timer? _timer;
 
-  final int intervalSeconds = 2;
+  final int intervalSeconds = 500;
   late GoogleMapController mapController;
   LatLng? _currentPosition; // Make this nullable to indicate no location yet
   double _heading = 0.0; // Initial heading
+  late double _speed;
 
   // BitmapDescriptor? _locationIcon; // Custom location icon
   Set<Marker> _potholeMarkers = {}; // Markers for potholes
 
   @override
-  void initState() async {
+  void initState() {
     super.initState();
     _controller = CameraController(
       widget.camera,
-      ResolutionPreset.high,
+      ResolutionPreset.low,
     );
     _initializeControllerFuture = _controller.initialize();
     _controller.setFlashMode(FlashMode.off);
@@ -44,7 +45,7 @@ class _CameraScreenState extends State<CameraScreen> {
     // await _loadLocationIcon();
 
     // Start the timer for automatic photo capture
-    _timer = Timer.periodic(Duration(seconds: intervalSeconds), (timer) {
+    _timer = Timer.periodic(Duration(milliseconds: intervalSeconds), (timer) {
       _takePictureAndSend();
     });
 
@@ -67,7 +68,8 @@ class _CameraScreenState extends State<CameraScreen> {
   // }
 
   Future<void> _takePictureAndSend() async {
-    if (_currentPosition == null) return; // Wait until location is available
+    if (_currentPosition == null || _speed < 5)
+      return; // Wait until location is available
 
     try {
       await _initializeControllerFuture;
@@ -84,29 +86,6 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<Position> _getLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    // Check if location services are enabled
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      throw Exception('Location services are disabled.');
-    }
-
-    // Request location permissions if not already granted
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        throw Exception('Location permissions are denied');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      throw Exception('Location permissions are permanently denied.');
-    }
-
-    // Get current location
     return await Geolocator.getCurrentPosition();
   }
 
@@ -123,7 +102,11 @@ class _CameraScreenState extends State<CameraScreen> {
       Geolocator.getPositionStream().listen((Position position) {
         setState(() {
           _currentPosition = LatLng(position.latitude, position.longitude);
+          _speed = position.speed;
         });
+        print(
+          "This is the speed ::  $_speed",
+        );
         mapController.animateCamera(
           CameraUpdate.newLatLng(_currentPosition!),
         );
