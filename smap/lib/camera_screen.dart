@@ -24,11 +24,10 @@ class _CameraScreenState extends State<CameraScreen> {
 
   final int intervalSeconds = 2;
   late GoogleMapController mapController;
-  LatLng _currentPosition = LatLng(
-      37.7749, -122.4194); // Make this nullable to indicate no location yet
+  LatLng? _currentPosition; // Make this nullable to indicate no location yet
   double _heading = 0.0; // Initial heading
 
-  BitmapDescriptor? _locationIcon; // Custom location icon
+  // BitmapDescriptor? _locationIcon; // Custom location icon
   Set<Marker> _potholeMarkers = {}; // Markers for potholes
 
   @override
@@ -42,7 +41,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _controller.setFlashMode(FlashMode.off);
 
     // Load custom icon for the user's location
-    await _loadLocationIcon();
+    // await _loadLocationIcon();
 
     // Start the timer for automatic photo capture
     _timer = Timer.periodic(Duration(seconds: intervalSeconds), (timer) {
@@ -60,12 +59,12 @@ class _CameraScreenState extends State<CameraScreen> {
     super.dispose();
   }
 
-  Future<void> _loadLocationIcon() async {
-    _locationIcon = await BitmapDescriptor.fromAssetImage(
-      ImageConfiguration(size: Size(48, 48)), // Customize size as needed
-      'assets/location_icon.png', // Replace with your icon asset
-    );
-  }
+  // Future<void> _loadLocationIcon() async {
+  //   _locationIcon = await BitmapDescriptor.fromAssetImage(
+  //     ImageConfiguration(size: Size(48, 48)), // Customize size as needed
+  //     'assets/location_icon.png', // Replace with your icon asset
+  //   );
+  // }
 
   Future<void> _takePictureAndSend() async {
     if (_currentPosition == null) return; // Wait until location is available
@@ -151,7 +150,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _fetchNearbyPotholes() async {
     if (_currentPosition == null) return;
 
-    final url = Uri.parse("http://:45670/nearby");
+    final url = Uri.parse("http://192.168.1.128:5000/nearby");
 
     try {
       final response = await http.get(url.replace(queryParameters: {
@@ -205,7 +204,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _sendImageToApi(
       String imagePath, double latitude, double longitude) async {
-    final uri = Uri.parse("http://98.11.205.187:45670/upload");
+    final uri = Uri.parse("http://192.168.1.128:5000/upload");
     final request = http.MultipartRequest("POST", uri);
     request.files.add(await http.MultipartFile.fromPath(
       'image',
@@ -238,26 +237,30 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Smap')),
-      body: GoogleMap(
-        onMapCreated: (GoogleMapController controller) {
-          mapController = controller;
-        },
-        initialCameraPosition: CameraPosition(
-          target: _currentPosition!,
-          zoom: 14.0,
-        ),
-        markers: {
-          Marker(
-            markerId: MarkerId("currentLocation"),
-            position: _currentPosition!,
-            icon: _locationIcon ?? BitmapDescriptor.defaultMarker,
-            rotation: _heading, // Rotate marker based on heading
-            anchor: Offset(0.5, 0.5), // Center the icon
-          ),
-          ..._potholeMarkers, // Add pothole markers
-        },
-      ),
+      appBar: AppBar(title: Center(child: Text("Smap"))),
+      body: _currentPosition == null
+          ? const Center(
+              child:
+                  CircularProgressIndicator()) // Show loading until location is available
+          : GoogleMap(
+              onMapCreated: (GoogleMapController controller) {
+                mapController = controller;
+              },
+              initialCameraPosition: CameraPosition(
+                target: _currentPosition!,
+                zoom: 14.0,
+              ),
+              markers: {
+                Marker(
+                  markerId: MarkerId("currentLocation"),
+                  position: _currentPosition!,
+                  icon: BitmapDescriptor.defaultMarker,
+                  rotation: _heading, // Rotate marker based on heading
+                  anchor: Offset(0.5, 0.5), // Center the icon
+                ),
+                ..._potholeMarkers, // Add pothole markers
+              },
+            ),
     );
   }
 }
