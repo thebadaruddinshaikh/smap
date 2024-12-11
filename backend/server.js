@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import Pothole from "./models/potholes.js";
+import predict from "./prediction/predict.js";
 
 
 dotenv.config();
@@ -18,7 +19,7 @@ const DB_PASS = process.env.mongoPass;
 const DB_STRING = `mongodb+srv://badar:${DB_PASS}@smap-cluster.r26ys.mongodb.net/?retryWrites=true&w=majority&appName=smap-cluster`;
 
 
-const RADIUS = 2;   
+const RADIUS = 1000;   
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -51,42 +52,12 @@ const upload = multer({
   },
 });
 
-
-
-app.get("/nearby", async (req, res) => {
-  const lat = req.query.latitude;
-  const long = req.query.longitude;
-  console.log(lat, long);
-
+async function recordPothole(coords) {
   try {
-    const potholes = await Pothole.find({
-      location: {
-        $nearSphere: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [lat, long] // Search around this point
-          },
-          $maxDistance: RADIUS // Max distance in meters
-        }
-      }
-    });
-
-    res.send(potholes)
-  } catch (err) {
-    console.error('Error querying potholes:', err);
-  }
-});
-
-app.post('/report', async (req, res) =>{
-  const lat = req.query.latitude;
-  const long = req.query.latitude;
-
-  try {
-    // Create a new Pothole instance
     const newPothole = new Pothole({
       location: {
         type: 'Point',             
-        coordinates: [lat, long]  
+        coordinates: [coords[0], coords[1]]  
       },
       markedBy: "client", 
     });
@@ -97,6 +68,57 @@ app.post('/report', async (req, res) =>{
   } catch (err) {
     console.error('Error saving pothole:', err);
   }
+}
+
+
+
+app.get("/nearby", async (req, res) => {
+  const lat = parseFloat(req.query.latitude);
+  const long = parseFloat(req.query.longitude);
+
+  if (isNaN(lat) || isNaN(long)) {
+    return res.status(400).send({ error: "Invalid latitude or longitude" });
+  }
+
+  console.log(`Fetching nearby potholes around lat: ${lat}, long: ${long}`);
+
+  try {
+    const potholes = await Pothole.find({
+      location: {
+        $nearSphere: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [long, lat] 
+          },
+          $maxDistance: RADIUS // Max distance in meters
+        }
+      }
+    });// Select the relevant fields
+
+    console.log(potholes)
+
+    // Map the potholes to a new structure with latitude and longitude
+    const nearbyPotholes = potholes.map(pothole => ({
+      latitude: pothole.location.coordinates[1], // Latitude is the second element
+      longitude: pothole.location.coordinates[0], // Longitude is the first element
+      markedBy: pothole.markedBy,
+      reportedAt: pothole.reportedAt
+    }));
+
+    // Send the response in the expected format
+    res.json({ nearby_potholes: nearbyPotholes });
+
+  } catch (err) {
+    console.error('Error querying potholes:', err);
+    res.status(500).send({ error: "Internal Server Error" });
+  }
+});
+
+app.post('/report', async (req, res) =>{
+  const lat = req.query.latitude;
+  const long = req.query.latitude;
+
+  await recordPothole([lat, long]);
 })
 
 
@@ -109,10 +131,24 @@ app.post('/upload', upload.single('image'), async (req, res) => {
 
   const tempPath = req.file.path;
   const targetPath = path.join(__dirname, 'images', req.file.originalname);
+  const potholePath = path.join(__dirname, "images/potholes", req.file.originalname);
+  const npotholePath = path.join(__dirname, "images/npotholes", req.file.originalname);
 
   try {
     // Move the file to the target directory
     await fs.rename(tempPath, targetPath);
+    const result = parseInt(await predict(targetPath), 10);
+    console.log(result)
+
+    switch (result) {
+      case 0:
+        await fs.rename(targetPath, npotholePath);
+        break;
+      case 1:
+        await fs.rename(targetPath, potholePath);
+        await recordPothole([latitude, longitude])
+        break;
+    }
 
     console.log(`Image uploaded: ${req.file.originalname}`);
     console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
