@@ -133,7 +133,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _fetchNearbyPotholes() async {
     if (_currentPosition == null) return;
 
-    final url = Uri.parse("http://192.168.1.128:5000/nearby");
+    final url = Uri.parse("http://98.11.205.187:45670/nearby");
 
     try {
       final response = await http.get(url.replace(queryParameters: {
@@ -187,7 +187,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _sendImageToApi(
       String imagePath, double latitude, double longitude) async {
-    final uri = Uri.parse("http://192.168.1.128:5000/upload");
+    final uri = Uri.parse("http://98.11.205.187:45670/upload");
     final request = http.MultipartRequest("POST", uri);
     request.files.add(await http.MultipartFile.fromPath(
       'image',

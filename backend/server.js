@@ -2,24 +2,23 @@ import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
 import bodyParser from "body-parser";
-import fs from 'fs/promises';
+import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
+import cron from "node-cron";
+
 import Pothole from "./models/potholes.js";
 import predict from "./prediction/predict.js";
 
-
 dotenv.config();
 const app = express();
-
 
 const PORT = process.env.port;
 const DB_PASS = process.env.mongoPass;
 const DB_STRING = `mongodb+srv://badar:${DB_PASS}@smap-cluster.r26ys.mongodb.net/?retryWrites=true&w=majority&appName=smap-cluster`;
 
-
-const RADIUS = 1000;   
+const RADIUS = 1000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -35,19 +34,17 @@ mongoose
     console.log(`Errored : ${err}`);
   });
 
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-
 const upload = multer({
-  dest: 'images/', // Directory to store uploaded files
+  dest: "images/", // Directory to store uploaded files
   fileFilter: (req, file, cb) => {
     // Accept only JPEG images
-    if (file.mimetype === 'image/jpeg') {
+    if (file.mimetype === "image/jpeg") {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG images are allowed!'), false);
+      cb(new Error("Only JPEG images are allowed!"), false);
     }
   },
 });
@@ -56,21 +53,19 @@ async function recordPothole(coords) {
   try {
     const newPothole = new Pothole({
       location: {
-        type: 'Point',             
-        coordinates: [coords[0], coords[1]]  
+        type: "Point",
+        coordinates: [coords[0], coords[1]],
       },
-      markedBy: "client", 
+      markedBy: "client",
     });
 
     // Save the document to the database
     await newPothole.save();
-    console.log('Pothole saved successfully!');
+    console.log("Pothole saved successfully!");
   } catch (err) {
-    console.error('Error saving pothole:', err);
+    console.error("Error saving pothole:", err);
   }
 }
-
-
 
 app.get("/nearby", async (req, res) => {
   const lat = parseFloat(req.query.latitude);
@@ -87,58 +82,64 @@ app.get("/nearby", async (req, res) => {
       location: {
         $nearSphere: {
           $geometry: {
-            type: 'Point',
-            coordinates: [long, lat] 
+            type: "Point",
+            coordinates: [long, lat],
           },
-          $maxDistance: RADIUS // Max distance in meters
-        }
-      }
-    });// Select the relevant fields
+          $maxDistance: RADIUS, // Max distance in meters
+        },
+      },
+    }); // Select the relevant fields
 
-    console.log(potholes)
+    console.log(potholes);
 
     // Map the potholes to a new structure with latitude and longitude
-    const nearbyPotholes = potholes.map(pothole => ({
+    const nearbyPotholes = potholes.map((pothole) => ({
       latitude: pothole.location.coordinates[1], // Latitude is the second element
       longitude: pothole.location.coordinates[0], // Longitude is the first element
       markedBy: pothole.markedBy,
-      reportedAt: pothole.reportedAt
+      reportedAt: pothole.reportedAt,
     }));
 
     // Send the response in the expected format
     res.json({ nearby_potholes: nearbyPotholes });
-
   } catch (err) {
-    console.error('Error querying potholes:', err);
+    console.error("Error querying potholes:", err);
     res.status(500).send({ error: "Internal Server Error" });
   }
 });
 
-app.post('/report', async (req, res) =>{
+app.post("/report", async (req, res) => {
   const lat = req.query.latitude;
   const long = req.query.latitude;
 
   await recordPothole([lat, long]);
-})
+});
 
-
-app.post('/upload', upload.single('image'), async (req, res) => {
+app.post("/upload", upload.single("image"), async (req, res) => {
   const { latitude, longitude } = req.body;
 
   if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
+    return res.status(400).json({ error: "No file uploaded" });
   }
 
   const tempPath = req.file.path;
-  const targetPath = path.join(__dirname, 'images', req.file.originalname);
-  const potholePath = path.join(__dirname, "images/potholes", req.file.originalname);
-  const npotholePath = path.join(__dirname, "images/npotholes", req.file.originalname);
+  const targetPath = path.join(__dirname, "images", req.file.originalname);
+  const potholePath = path.join(
+    __dirname,
+    "images/potholes",
+    req.file.originalname
+  );
+  const npotholePath = path.join(
+    __dirname,
+    "images/npotholes",
+    req.file.originalname
+  );
 
   try {
     // Move the file to the target directory
     await fs.rename(tempPath, targetPath);
     const result = parseInt(await predict(targetPath), 10);
-    console.log(result)
+    console.log(result);
 
     switch (result) {
       case 0:
@@ -146,7 +147,7 @@ app.post('/upload', upload.single('image'), async (req, res) => {
         break;
       case 1:
         await fs.rename(targetPath, potholePath);
-        await recordPothole([latitude, longitude])
+        await recordPothole([latitude, longitude]);
         break;
     }
 
@@ -154,14 +155,38 @@ app.post('/upload', upload.single('image'), async (req, res) => {
     console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
 
     res.status(200).json({
-      message: 'Image uploaded successfully with location data',
+      message: "Image uploaded successfully with location data",
       fileName: req.file.originalname,
       latitude,
       longitude,
     });
   } catch (error) {
-    console.error('Error saving the file:', error);
-    res.status(500).json({ error: 'Error saving the file' });
+    console.error("Error saving the file:", error);
+    res.status(500).json({ error: "Error saving the file" });
   }
 });
 
+const prugeStaleData = async () => {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  try {
+    const staleItems = await Pothole.find({
+      reportedAt: { $lt: sevenDaysAgo },
+    });
+    if (staleItems.length > 0) {
+      console.log(`Found ${staleItems.length} stale items.`);
+      await Item.deleteMany({ createdAt: { $lt: sevenDaysAgo } });
+      console.log("Deleted stale items.");
+    } else {
+      console.log("No stale items found.");
+    }
+  } catch (error) {
+    console.error("Error checking stale data:", error);
+  }
+};
+
+cron.schedule("0 0 */7 * *", () => {
+  console.log("Running stale data check...");
+  prugeStaleData();
+});
